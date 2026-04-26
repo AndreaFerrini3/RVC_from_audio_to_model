@@ -151,7 +151,7 @@ def main():
 
     generate_html(global_plot, summary, layer_plots, args.output)
 
-    print(f"Report generato: {args.output}")
+    print(f"Report generated: {args.output}")
 
 
 if __name__ == "__main__":
