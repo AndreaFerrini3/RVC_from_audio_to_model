@@ -1,0 +1,66 @@
+def _summarize_feature_maps(fmap_r, fmap_g, max_discriminators=2, max_layers=2):
+    summary = []
+    for d_idx, (dr, dg) in enumerate(zip(fmap_r, fmap_g)):
+        if d_idx >= max_discriminators:
+            break
+        for l_idx, (rl, gl) in enumerate(zip(dr, dg)):
+            if l_idx >= max_layers:
+                break
+            rl_f = rl.detach().float()
+            gl_f = gl.detach().float()
+            summary.append(
+                {
+                    "disc": d_idx,
+                    "layer": l_idx,
+                    "shape_r": list(rl_f.shape),
+                    "shape_g": list(gl_f.shape),
+                    "mean_r": float(rl_f.mean().item()),
+                    "std_r": float(rl_f.std(unbiased=False).item()),
+                    "mean_g": float(gl_f.mean().item()),
+                    "std_g": float(gl_f.std(unbiased=False).item()),
+                    "l1_mean": float(torch.mean(torch.abs(rl_f - gl_f)).item()),
+                }
+            )
+    return summary
+
+
+def _append_feature_map_summary(file_path, summary, epoch, batch_idx, global_step):
+    if not summary:
+        return
+    file_exists = os.path.exists(file_path)
+    with open(file_path, "a", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        if not file_exists:
+            writer.writerow(
+                [
+                    "epoch",
+                    "batch_idx",
+                    "global_step",
+                    "disc",
+                    "layer",
+                    "shape_r",
+                    "shape_g",
+                    "mean_r",
+                    "std_r",
+                    "mean_g",
+                    "std_g",
+                    "l1_mean",
+                ]
+            )
+        for item in summary:
+            writer.writerow(
+                [
+                    int(epoch),
+                    int(batch_idx),
+                    int(global_step),
+                    item["disc"],
+                    item["layer"],
+                    "x".join(map(str, item["shape_r"])),
+                    "x".join(map(str, item["shape_g"])),
+                    item["mean_r"],
+                    item["std_r"],
+                    item["mean_g"],
+                    item["std_g"],
+                    item["l1_mean"],
+                ]
+            )
