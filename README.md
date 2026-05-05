@@ -20,6 +20,8 @@ python scripts/setup.py
 #       cp /path/to/*.wav dataset/my_voice/audios/
 #    Subfolders segmented/ and filtered/ are created by the pipeline.
 
+# path a dataset LS: "Mangio-RVC-Fork/datasets/Luca/LS/"
+
 # 4. Run the full pipeline (reads dataset/my_voice/audios/, writes mangio/logs/my_voice/)
 python scripts/run_pipeline.py --model_name my_voice --dataset my_voice --sr 40k --epochs 200 --gpus 0
 
