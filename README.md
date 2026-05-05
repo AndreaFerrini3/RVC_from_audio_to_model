@@ -1,60 +1,229 @@
-# RVC — Dal Segmento Audio al Modello Vocale / From Audio to Voice Model
+# RVC — From Audio to Voice Model
 
-> Documentazione e script per la pipeline completa di addestramento di un modello vocale con **Mangio RVC** (fork di RVC — Retrieval-based Voice Conversion).
->
-> Documentation and scripts for the full voice model training pipeline using **Mangio RVC** (fork of RVC — Retrieval-based Voice Conversion).
+> Scripts and tools for the full voice model training pipeline using **Mangio RVC** (fork of RVC — Retrieval-based Voice Conversion).
 
 ---
 
-## Italiano
+## Quick Start
 
-### Panoramica
+```bash
+# 1. Clone (includes Mangio-RVC-Fork as submodule)
+git clone --recurse-submodules <repo_url>
+cd RVC_from_audio_to_model
 
-Questa repository raccoglie tutto il materiale relativo alla procedura di addestramento di un modello vocale con Mangio RVC. Il processo si divide in tre macro-fasi, ciascuna con la propria cartella dedicata.
+# 2. One-time setup: dependencies + pretrained models + patch Mangio
+python scripts/setup.py
 
-### Pipeline
+# 3. Place raw audio files in dataset/audios/  (WAV, FLAC, MP3, OGG, M4A, AAC)
 
+# 4. Run the full pipeline
+python scripts/run_pipeline.py --model_name my_voice --sr 40k --epochs 200 --gpus 0
+
+# — or use the shell wrapper (same defaults, less typing) —
+./run_pipeline.sh my_voice          # Linux / Mac / WSL
+run_pipeline.bat my_voice           # Windows CMD
 ```
-Registrazione → Segmentazione → Filtraggio SNR → Training → Analisi
-```
 
-### Struttura della repository
+The pipeline runs automatically:
+1. Segment audio into ~10 s clips (`frag.py`)
+2. Filter by SNR ≥ 25 dB (`rem_noise.py`)
+3. Mangio preprocessing, pitch extraction, feature extraction
+4. Model training
+5. Loss report + feature map report (HTML)
 
 ```
 RVC_from_audio_to_model/
 ├── dataset/
-│   ├── audios/               # Audio sorgente grezzo (input di frag.py)
-│   ├── segmented/            # Segmenti ~10s prodotti da frag.py
-│   └── filtered/             # Segmenti filtrati (SNR ≥ 25 dB) pronti per il training
-├── 1_before-training/
-│   ├── frag.py               # Segmentazione audio in clip ~10s
-│   └── rem_noise.py          # Filtraggio segmenti per SNR ≥ 25 dB
-├── 2_during-training/
-│   └── feature_functions.txt # Funzioni di monitoraggio feature map GAN
+│   ├── segmented/              ← frag.py output: ~10 s WAV clips
+│   └── filtered/               ← rem_noise.py output: clips with SNR ≥ 25 dB
+├── mangio/
+│   ├── csvdb/
+│   │   ├── formanting.csv      ← auto-created (formant shift disabled by default)
+│   │   └── stop.csv            ← auto-created (GUI stop flag, set to False)
+│   └── logs/
+│       └── <model_name>/
+│           ├── 0_gt_wavs/              preprocessed ground-truth WAVs
+│           ├── 1_16k_wavs/             WAVs resampled to 16 kHz (HuBERT input)
+│           ├── 2a_f0/                  pitch (f0) arrays — .wav.npy per clip
+│           ├── 2b-f0nsf/               NSF-format pitch arrays — .wav.npy per clip
+│           ├── 3_feature768/           HuBERT feature vectors — .npy per clip (v2)
+│           ├── filelist.txt            training manifest (auto-generated)
+│           ├── train.log               training log (loss values per step)
+│           ├── feature_map_summary.csv GAN discriminator feature stats per epoch
+│           ├── G_<step>.pth            generator checkpoints (every save_epoch)
+│           ├── D_<step>.pth            discriminator checkpoints (every save_epoch)
+│           └── <model_name>.pth        final exported voice model ← use this for inference
 └── 3_after-training/
-    ├── gan_feature_report.py  # Report HTML interattivo delle feature map
-    └── plot_loss.py           # Grafici e report HTML delle loss di training
+    └── <model_name>/
+        ├── feature_report.html         interactive GAN stability report (Plotly)
+        ├── loss_report.html            training loss charts (per metric + combined)
+        └── plots/
+            ├── train_loss_disc.png
+            ├── train_loss_gen.png
+            ├── train_loss_fm.png
+            ├── train_loss_mel.png
+            ├── train_loss_kl.png
+            └── combined_*.png          overlaid curves (useful when comparing models)
 ```
 
-### Fasi
+---
 
-#### Dataset (`dataset/`)
+## Repository Structure
 
-La cartella `dataset/` segue il flusso dei dati attraverso la pipeline:
+```
+RVC_from_audio_to_model/
+├── run_pipeline.sh                # Shell wrapper — Linux / Mac / WSL
+├── run_pipeline.bat               # Shell wrapper — Windows CMD
+├── mangio/                        # Mangio-RVC-Fork (git submodule, MIT)
+├── scripts/
+│   ├── setup.py                   # One-time setup (deps + models + patch)
+│   ├── patch_mangio.py            # Injects GAN monitoring into Mangio train script
+│   └── run_pipeline.py            # End-to-end pipeline orchestrator
+├── dataset/
+│   ├── audios/                    # Raw source audio — place files here
+│   ├── segmented/                 # Output of frag.py (~10 s clips)
+│   └── filtered/                  # Output of rem_noise.py (SNR ≥ 25 dB)
+├── 1_before-training/
+│   ├── frag.py                    # Audio segmentation
+│   └── rem_noise.py               # SNR filtering
+├── 2_during-training/
+│   └── feature_functions.txt      # Reference: functions injected by patch_mangio.py
+├── 3_after-training/
+│   ├── gan_feature_report.py      # Interactive HTML report of GAN feature maps
+│   └── plot_loss.py               # Training loss charts and HTML report
+└── requirements.txt
+```
 
-| Cartella | Contenuto |
+---
+
+## Shell Wrappers
+
+`run_pipeline.sh` / `run_pipeline.bat` call `scripts/run_pipeline.py` with sensible defaults.
+All `--flags` are forwarded verbatim; env vars let you override defaults without touching the script.
+
+**Linux / Mac / WSL**
+```bash
+# Basic — model name only
+./run_pipeline.sh my_voice
+
+# Override specific flags
+./run_pipeline.sh my_voice --epochs 300 --sr 48k
+
+# Override via env vars (valid for that run only)
+GPUS=0-1 EPOCHS=500 ./run_pipeline.sh my_voice
+```
+
+**Windows CMD**
+```bat
+rem Basic
+run_pipeline.bat my_voice
+
+rem Override specific flags
+run_pipeline.bat my_voice --epochs 300 --sr 48k
+
+rem Override via env vars (persist for the CMD session)
+set GPUS=0-1 && run_pipeline.bat my_voice
+```
+
+**Override priority** (highest wins):
+
+| Level | Example |
 |---|---|
-| `audios/` | File audio grezzi sorgente — metti qui i tuoi WAV prima di eseguire `frag.py` |
-| `segmented/` | Output di `frag.py` — segmenti ~10s con tagli ai silenzi naturali |
-| `filtered/` | Output di `rem_noise.py` — segmenti filtrati (SNR ≥ 25 dB) pronti per il training in RVC |
+| `--flag` on command line | `--epochs 300` |
+| Env var | `EPOCHS=500 ./run_pipeline.sh` |
+| Default in script | `EPOCHS=200` |
 
-#### 1 — Preparazione del dataset (`1_before-training/`)
+**Env vars recognised by the wrappers:**
 
-**`frag.py`** — Segmentazione intelligente dell'audio sorgente.
-- Taglia il file WAV in segmenti di circa **10 secondi** cercando i silenzi naturali (≥ 1000 ms, soglia –40 dBFS) entro una finestra di **±5 secondi** attorno all'istante target.
-- Scarta automaticamente i segmenti più corti di **350 ms** (troppo brevi per il pitch estimator RMVPE di RVC).
+| Var | Default | Equivalent flag |
+|---|---|---|
+| `MODEL_NAME` | `my_voice` | first positional arg |
+| `SR` | `40k` | `--sr` |
+| `EPOCHS` | `200` | `--epochs` |
+| `SAVE_EPOCH` | `10` | `--save_epoch` |
+| `BATCH_SIZE` | `8` | `--batch_size` |
+| `GPUS` | `0` | `--gpus` |
+| `F0METHOD` | `rmvpe` | `--f0method` |
+| `N_PROCESSES` | `4` | `--n_processes` |
 
-| Parametro | Default |
+> **Linux/Mac**: run `chmod +x run_pipeline.sh` once before first use.
+
+---
+
+## run_pipeline.py — Options
+
+```
+--model_name        Model / experiment name (required)
+--sr                Sample rate: 32k | 40k | 48k  (default: 40k)
+--f0                Pitch guidance: 1=yes 0=no     (default: 1)
+--version           RVC version: v1 | v2           (default: v2)
+--epochs            Total training epochs           (default: 200)
+--save_epoch        Save checkpoint every N epochs  (default: 10)
+--batch_size        Batch size                      (default: 8)
+--gpus              GPU indices, dash-separated     (default: 0)
+--f0method          Pitch method: rmvpe | harvest | crepe | pm  (default: rmvpe)
+--pretrained_G      Path to pretrained G .pth (relative to mangio/)
+--pretrained_D      Path to pretrained D .pth (relative to mangio/)
+--cache_gpu         Cache dataset in GPU VRAM
+--save_latest       Keep only the latest checkpoint
+--save_every_weights  Export .pth weights every save_epoch
+--skip_segment      Skip frag.py + rem_noise.py (dataset/filtered/ already ready)
+--skip_analysis     Skip post-training HTML reports
+```
+
+---
+
+## setup.py — Options
+
+```
+--version           Pretrained model version to download: v1 | v2  (default: v2)
+--skip_deps         Skip pip install (already done)
+--skip_models       Skip pretrained model download (already done)
+--skip_patch        Skip patch_mangio.py
+```
+
+> **Note on PyTorch**: `setup.py` installs `torch==2.0.0` from Mangio's `requirements.txt`.
+> If you need a specific CUDA version, install PyTorch manually first, then run:
+> `python scripts/setup.py --skip_deps`
+
+---
+
+## Post-training analysis (standalone)
+
+If you want to run analysis separately after training:
+
+```bash
+python 3_after-training/gan_feature_report.py \
+    --input_folder mangio/logs/my_voice \
+    --output 3_after-training/my_voice/feature_report.html
+
+python 3_after-training/plot_loss.py \
+    --logs_folder mangio/logs/my_voice \
+    --output_dir 3_after-training/my_voice/plots \
+    --html_output 3_after-training/my_voice/loss_report.html
+```
+
+---
+
+## Recommended Audio Requirements
+
+| Property | Recommendation |
+|---|---|
+| Environment | Soundproofed room, no reverb or echo |
+| Microphone | Condenser (e.g. Neumann, AKG, Rode NT) with quality preamp |
+| Sample rate | 44.1 kHz or 48 kHz |
+| Duration | 10–15 min clean speech minimum; 30–60 min for high quality |
+| Formats | WAV, FLAC, MP3, OGG, M4A, AAC |
+
+---
+
+## Phase Details
+
+### 1 — Dataset preparation (`1_before-training/`)
+
+**`frag.py`** — Segments audio into ~10 s clips at natural silences.
+
+| Parameter | Value |
 |---|---|
 | `TARGET_MS` | 10 000 ms |
 | `MIN_SEGMENT_MS` | 350 ms |
@@ -62,152 +231,32 @@ La cartella `dataset/` segue il flusso dei dati attraverso la pipeline:
 | `SILENCE_THRESH_DB` | –40 dBFS |
 | `SEARCH_WINDOW_MS` | ±5 000 ms |
 
-**`rem_noise.py`** — Filtraggio per qualità SNR.
-- Calcola il rapporto segnale-rumore di ogni segmento separando frame vocali e silenziosi tramite `librosa.effects.split`.
-- Formula: `SNR = 20 · log₁₀((RMS_voce + ε) / (RMS_rumore + ε))` con ε = 10⁻¹²
-- Conserva solo i segmenti con **SNR ≥ 25 dB**.
+**`rem_noise.py`** — Keeps segments with SNR ≥ 25 dB.
+Formula: `SNR = 20 · log₁₀((RMS_voice + ε) / (RMS_noise + ε))` with ε = 10⁻¹²
 
-#### 2 — Durante il training (`2_during-training/`)
+### 2 — During training (`2_during-training/`)
 
-**`feature_functions.txt`** — Contiene le due funzioni personalizzate da inserire nel codice di training di Mangio RVC per monitorare l'andamento della GAN a livello interno.
+**`feature_functions.txt`** — Reference copy of the two functions injected by `patch_mangio.py` into `mangio/train_nsf_sim_cache_sid_load_pretrain.py`.
 
-- **`_summarize_feature_maps(fmap_r, fmap_g)`** — Per ogni coppia discriminatore/layer calcola: `mean_r`, `mean_g`, `std_r`, `std_g`, `l1_mean`, `shape_r`, `shape_g`.
-- **`_append_feature_map_summary(...)`** — Scrive le statistiche in un CSV (append), con colonne `epoch`, `batch_idx`, `global_step`, `disc`, `layer` e le metriche sopra.
+- **`_summarize_feature_maps`** — Per discriminator/layer: `mean_r/g`, `std_r/g`, `l1_mean`, `shape_r/g`.
+- **`_append_feature_map_summary`** — Appends stats to `mangio/logs/<model>/feature_map_summary.csv`.
 
-La metrica chiave è **`l1_mean`**: deve decrescere nel tempo per indicare convergenza. Valori stabili o crescenti segnalano instabilità del generatore o mode collapse.
+Key metric: **`l1_mean`** should decrease over time. Flat or rising values signal instability or mode collapse.
 
-#### 3 — Analisi post-training (`3_after-training/`)
+### 3 — Post-training (`3_after-training/`)
 
-**`gan_feature_report.py`** — Legge i CSV prodotti durante il training e genera un report HTML interattivo (Plotly) con:
-- Grafico globale L1 (media ± 1σ su tutti i discriminatori e layer)
-- Grafici per discriminatore (una curva per layer)
-- Tabella aggregata per epoch/discriminatore/layer
+**`gan_feature_report.py`** — Reads `feature_map_summary.csv`, generates interactive Plotly HTML:
+- Global L1 trend (mean ± 1σ)
+- Per-discriminator curves per layer
+- Aggregated table
 
-```bash
-python gan_feature_report.py --input_folder ./csv_dir --output report.html
-```
-
-**`plot_loss.py`** — Analizza i file `.log` di RVC ed estrae le loss per epoca (`loss_disc`, `loss_gen`, `loss_fm`, `loss_mel`, `loss_kl`). Genera:
-- Grafici per singolo modello
-- Grafici comparativi multi-modello sovrapposti
-- Report HTML navigabile
-
-```bash
-python plot_loss.py
-```
-
-### Requisiti audio consigliati
-
-- **Ambiente**: stanza insonorizzata, assenza di riverbero ed eco.
-- **Hardware**: microfono a condensatore (es. Neumann, AKG, Rode NT), interfaccia audio con buon preamp.
-- **Frequenza di campionamento**: 44.1 kHz o 48 kHz.
-- **Quantità**: minimo 10–15 minuti di parlato pulito; 30–60 minuti per qualità elevata.
-
-### Riferimenti
-
-- [Mangio-RVC-Fork](https://github.com/Mangio621/Mangio-RVC-Fork)
-
----
-
-## English
-
-### Overview
-
-This repository contains all material related to the voice model training procedure using Mangio RVC. The process is divided into three macro-phases, each with its own dedicated folder.
-
-### Pipeline
-
-```
-Recording → Segmentation → SNR Filtering → Training → Analysis
-```
-
-### Repository Structure
-
-```
-RVC_from_audio_to_model/
-├── dataset/
-│   ├── audios/               # Raw source audio (input to frag.py)
-│   ├── segmented/            # ~10s segments produced by frag.py
-│   └── filtered/             # SNR-filtered segments (≥ 25 dB) ready for training
-├── 1_before-training/
-│   ├── frag.py               # Splits audio into ~10s clips
-│   └── rem_noise.py          # Filters segments by SNR ≥ 25 dB
-├── 2_during-training/
-│   └── feature_functions.txt # GAN feature map monitoring functions
-└── 3_after-training/
-    ├── gan_feature_report.py  # Interactive HTML report of feature maps
-    └── plot_loss.py           # Training loss charts and HTML report
-```
-
-### Phases
-
-#### Dataset (`dataset/`)
-
-The `dataset/` folder mirrors the data flow through the pipeline:
-
-| Folder | Contents |
-|---|---|
-| `audios/` | Raw source audio files — place your WAVs here before running `frag.py` |
-| `segmented/` | Output of `frag.py` — ~10s clips cut at natural silences |
-| `filtered/` | Output of `rem_noise.py` — SNR-filtered segments (≥ 25 dB) ready for RVC training |
-
-#### 1 — Dataset preparation (`1_before-training/`)
-
-**`frag.py`** — Smart audio segmentation.
-- Splits a WAV file into segments of approximately **10 seconds** by locating natural silences (≥ 1000 ms, threshold –40 dBFS) within a **±5-second** window around the target timestamp.
-- Automatically discards segments shorter than **350 ms** (too short for RVC's RMVPE pitch estimator).
-
-| Parameter | Default |
-|---|---|
-| `TARGET_MS` | 10 000 ms |
-| `MIN_SEGMENT_MS` | 350 ms |
-| `MIN_SILENCE_MS` | 1 000 ms |
-| `SILENCE_THRESH_DB` | –40 dBFS |
-| `SEARCH_WINDOW_MS` | ±5 000 ms |
-
-**`rem_noise.py`** — SNR-based quality filtering.
-- Computes the signal-to-noise ratio of each segment by separating voiced and silent frames via `librosa.effects.split`.
-- Formula: `SNR = 20 · log₁₀((RMS_voice + ε) / (RMS_noise + ε))` with ε = 10⁻¹²
-- Keeps only segments with **SNR ≥ 25 dB**.
-
-#### 2 — During training (`2_during-training/`)
-
-**`feature_functions.txt`** — Contains two custom functions to inject into the Mangio RVC training code for internal GAN monitoring.
-
-- **`_summarize_feature_maps(fmap_r, fmap_g)`** — For each discriminator/layer pair, computes: `mean_r`, `mean_g`, `std_r`, `std_g`, `l1_mean`, `shape_r`, `shape_g`.
-- **`_append_feature_map_summary(...)`** — Appends statistics to a CSV file with columns `epoch`, `batch_idx`, `global_step`, `disc`, `layer`, and the metrics above.
-
-The key metric is **`l1_mean`**: it should decrease over time to indicate convergence. Flat or increasing values signal generator instability or partial mode collapse.
-
-#### 3 — Post-training analysis (`3_after-training/`)
-
-**`gan_feature_report.py`** — Reads the CSVs produced during training and generates an interactive HTML report (Plotly) with:
-- Global L1 chart (mean ± 1σ across all discriminators and layers)
-- Per-discriminator charts (one curve per layer)
-- Aggregated table by epoch/discriminator/layer
-
-```bash
-python gan_feature_report.py --input_folder ./csv_dir --output report.html
-```
-
-**`plot_loss.py`** — Parses RVC `.log` files and extracts per-epoch losses (`loss_disc`, `loss_gen`, `loss_fm`, `loss_mel`, `loss_kl`). Produces:
+**`plot_loss.py`** — Parses `.log` files, extracts `loss_disc`, `loss_gen`, `loss_fm`, `loss_mel`, `loss_kl`:
 - Per-model charts
-- Multi-model comparative overlay charts
+- Multi-model comparative overlay
 - Navigable HTML report
 
-```bash
-python plot_loss.py
-```
-
-### Recommended Audio Requirements
-
-- **Environment**: soundproofed room, no reverb or echo.
-- **Hardware**: condenser microphone (e.g. Neumann, AKG, Rode NT), audio interface with a quality preamp.
-- **Sample rate**: 44.1 kHz or 48 kHz.
-- **Amount**: minimum 10–15 minutes of clean speech; 30–60 minutes for high-quality models.
-
-### References
-
-- [Mangio-RVC-Fork](https://github.com/Mangio621/Mangio-RVC-Fork)
-
 ---
+
+## References
+
+- [Mangio-RVC-Fork](https://github.com/Mangio621/Mangio-RVC-Fork) — MIT License © liujing04, 源文雨

@@ -7,7 +7,7 @@ def load_csvs(folder_path):
     folder = Path(folder_path)
     csv_files = list(folder.glob("*.csv"))
     if not csv_files:
-        raise ValueError("No CSV files found in the specified folder.")
+        return None
 
     dfs = [pd.read_csv(f) for f in csv_files]
     return pd.concat(dfs, ignore_index=True)
@@ -131,6 +131,8 @@ def generate_html(global_plot, summary_df, layer_plots, output_file):
 
     html += "</body></html>"
 
+    from pathlib import Path
+    Path(output_file).parent.mkdir(parents=True, exist_ok=True)
     with open(output_file, "w", encoding="utf-8") as f:
         f.write(html)
 
@@ -144,6 +146,10 @@ def main():
     args = parser.parse_args()
 
     df = load_csvs(args.input_folder)
+    if df is None:
+        print(f"WARNING: no feature_map_summary.csv found in {args.input_folder} — skipping report.")
+        return
+
     summary, global_epoch = aggregate_metrics(df)
 
     global_plot = create_global_plot(global_epoch)

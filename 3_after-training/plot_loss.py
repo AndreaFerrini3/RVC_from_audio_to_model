@@ -1,21 +1,17 @@
+import argparse
 import os
 import re
-import json
 import glob
 import matplotlib.pyplot as plt
 from bs4 import BeautifulSoup
 
-# CONFIG
-
-OUTPUT_DIR = "" # directory to save the generated images and HTML report (e.g., "[modelname]_plots")
-HTML_OUTPUT = "" # path for the final HTML report (e.g., "[modelname].html")
-
-os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_DIR = ""
+HTML_OUTPUT = ""
 
 # Regex to extract metrics from log lines, e.g.:
 # "loss_disc=0.123 loss_gen=0.456 loss_fm=0
 METRIC_REGEX = re.compile(
-    r"(loss_disc|loss_gen_all|loss_gen|loss_fm|loss_mel|loss_kl)=([0-9\.]+)"
+    r"(loss_disc|loss_gen_all|loss_gen|loss_fm|loss_mel|loss_kl)=([-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?)"
 )
 
 METRICS = ["loss_disc", "loss_gen", "loss_gen_all", "loss_fm", "loss_mel", "loss_kl"]
@@ -34,9 +30,9 @@ def parse_log_file(path):
     current_epoch = None
     for line in lines:
         if "Train Epoch:" in line:
-            parts = line.split("Train Epoch:")[1].strip()
-            epoch = int(parts.split()[0])
-            current_epoch = epoch
+            epoch_match = re.search(r"Train Epoch:\s*(\d+)", line)
+            if epoch_match:
+                current_epoch = int(epoch_match.group(1))
 
         matches = METRIC_REGEX.findall(line)
         if matches and current_epoch is not None:
@@ -169,7 +165,8 @@ def build_html(image_paths):
         imgs_sorted = sorted(metrics_map[metric])
 
         for img in imgs_sorted:
-            row.append(soup.new_tag("img", src=img))
+            rel = os.path.relpath(img, os.path.dirname(os.path.abspath(HTML_OUTPUT)))
+            row.append(soup.new_tag("img", src=rel))
 
         body.append(row)
 
@@ -180,7 +177,8 @@ def build_html(image_paths):
 
     for img in combined_imgs:
         row = soup.new_tag("div", **{"class": "row"})
-        row.append(soup.new_tag("img", src=img, style="width:50%;"))
+        rel = os.path.relpath(img, os.path.dirname(os.path.abspath(HTML_OUTPUT)))
+        row.append(soup.new_tag("img", src=rel, style="width:50%;"))
         body.append(row)
 
     with open(HTML_OUTPUT, "w", encoding="utf-8") as f:
@@ -218,4 +216,15 @@ def main(logs_folder):
 
 
 if __name__ == "__main__":
-    main("") # directory containing the train.log files (e.g., "[modelname]_logs")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--logs_folder", required=True, help="Folder containing .log files")
+    parser.add_argument("--output_dir", required=True, help="Folder to save generated images")
+    parser.add_argument("--html_output", required=True, help="Path for the HTML report")
+    args = parser.parse_args()
+
+    OUTPUT_DIR = args.output_dir
+    HTML_OUTPUT = args.html_output
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(HTML_OUTPUT)), exist_ok=True)
+
+    main(args.logs_folder)

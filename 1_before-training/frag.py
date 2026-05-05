@@ -3,20 +3,30 @@ from pydub import AudioSegment
 from pydub.silence import detect_silence
 
 # --- CONFIG ---
-INPUT_DIR = "dataset/audios" # directory containing the original audio files to be segmented
-OUTPUT_DIR = os.path.join(INPUT_DIR, "dataset/segmented") # directory to save the segmented audio files (e.g., "segmented")
+INPUT_DIR = "dataset/audios"
+OUTPUT_DIR = "dataset/segmented"
 
-TARGET_MS = 22000          # Target segment duration (~10s)
+TARGET_MS = 10000           # Target segment duration (~10s)
 MIN_SEGMENT_MS = 350        # Min segment duration for RMVPE (~0.35s)
-MIN_SILENCE_MS = 500       # Minimum silence duration considered
+MIN_SILENCE_MS = 1000       # Minimum silence duration considered
 SILENCE_THRESH_DB = -40     # Silence threshold
-SEARCH_WINDOW_MS = 8000    # ±5s to search for silence near the target
+SEARCH_WINDOW_MS = 5000     # ±5s to search for silence near the target
+
+SUPPORTED_FORMATS = (".wav", ".flac", ".mp3", ".ogg", ".m4a", ".aac")
 
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # --- FUNCTIONS ---
+def load_audio(src_path):
+    ext = os.path.splitext(src_path)[1].lower()
+    fmt_map = {".wav": "wav", ".flac": "flac", ".mp3": "mp3",
+               ".ogg": "ogg", ".m4a": "mp4", ".aac": "aac"}
+    fmt = fmt_map.get(ext, ext.lstrip("."))
+    audio = AudioSegment.from_file(src_path, format=fmt)
+    # normalise to 16-bit PCM WAV in memory so the rest of the pipeline is uniform
+    return audio.set_sample_width(2)
+
 def find_silence_points(audio):
-    """Returns list of centers of detected silences (ms)"""
     silences = detect_silence(
         audio,
         min_silence_len=MIN_SILENCE_MS,
@@ -25,7 +35,7 @@ def find_silence_points(audio):
     return [(start + end) // 2 for start, end in silences]
 
 def segment_audio(src_path):
-    audio = AudioSegment.from_wav(src_path)
+    audio = load_audio(src_path)
     silence_points = find_silence_points(audio)
     duration = len(audio)
     base = os.path.splitext(os.path.basename(src_path))[0]
@@ -55,14 +65,16 @@ def segment_audio(src_path):
             segment.export(out_file, format="wav")
             count += 1
 
-        # if the segment is too short, skip it and move the cursor forward
         cursor = cut_point
 
     print(f"{count} segments generated from {src_path}")
 
 def main():
+    if not os.path.isdir(INPUT_DIR):
+        print(f"ERROR: Input directory '{INPUT_DIR}' not found. Create it and add audio files.")
+        return
     for file in os.listdir(INPUT_DIR):
-        if file.lower().endswith(".wav"):
+        if file.lower().endswith(SUPPORTED_FORMATS):
             segment_audio(os.path.join(INPUT_DIR, file))
 
 if __name__ == "__main__":
