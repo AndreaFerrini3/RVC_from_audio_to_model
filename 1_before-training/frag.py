@@ -3,8 +3,11 @@ from pydub import AudioSegment
 from pydub.silence import detect_silence
 
 # --- CONFIG ---
-INPUT_DIR = "dataset/audios"
-OUTPUT_DIR = "dataset/segmented"
+# DATASET_DIR is set by scripts/run_pipeline.py per-dataset.
+# Standalone use: set DATASET_DIR=dataset/<name> or rely on the legacy fallback.
+DATASET_DIR = os.environ.get("DATASET_DIR", "dataset")
+INPUT_DIR = os.path.join(DATASET_DIR, "audios")
+OUTPUT_DIR = os.path.join(DATASET_DIR, "segmented")
 
 TARGET_MS = 10000           # Target segment duration (~10s)
 MIN_SEGMENT_MS = 350        # Min segment duration for RMVPE (~0.35s)

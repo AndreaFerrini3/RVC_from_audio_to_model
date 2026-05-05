@@ -26,10 +26,10 @@ REPO_ROOT = Path(__file__).parent.parent
 MANGIO_DIR = REPO_ROOT / "mangio"
 
 
-def run(cmd, cwd=None):
+def run(cmd, cwd=None, env=None):
     label = cwd.name if cwd else "."
     print(f"\n[{label}] >>> {cmd}\n")
-    result = subprocess.run(cmd, shell=True, cwd=str(cwd or REPO_ROOT))
+    result = subprocess.run(cmd, shell=True, cwd=str(cwd or REPO_ROOT), env=env)
     if result.returncode != 0:
         print(f"FAILED (exit {result.returncode}): {cmd}")
         sys.exit(result.returncode)
@@ -97,6 +97,10 @@ def build_parser():
 
     p.add_argument("--model_name", required=True,
                    help="Experiment / model name (used as logs/{model_name}/ in Mangio)")
+    p.add_argument("--dataset", default=None,
+                   help="Dataset folder name under dataset/ (default: same as --model_name). "
+                        "Expects dataset/<name>/audios/ — outputs go to "
+                        "dataset/<name>/segmented/ and dataset/<name>/filtered/")
 
     # Audio / model settings
     p.add_argument("--sr", default="40k", choices=["32k", "40k", "48k"],
@@ -148,7 +152,9 @@ def main():
 
     py = sys.executable
     sr_int = {"32k": 32000, "40k": 40000, "48k": 48000}[args.sr]
-    dataset_filtered = str(REPO_ROOT / "dataset" / "filtered")
+    dataset_name = args.dataset or args.model_name
+    dataset_dir = REPO_ROOT / "dataset" / dataset_name
+    dataset_filtered = str(dataset_dir / "filtered")
     exp_dir = str(MANGIO_DIR / "logs" / args.model_name)
     gpu_list = args.gpus.split("-")
     n_gpus = len(gpu_list)
@@ -157,8 +163,16 @@ def main():
     # 1-2. Dataset preparation                                            #
     # ------------------------------------------------------------------ #
     if not args.skip_segment:
-        run(f'"{py}" 1_before-training/frag.py')
-        run(f'"{py}" 1_before-training/rem_noise.py')
+        audios_dir = dataset_dir / "audios"
+        if not audios_dir.is_dir() or not any(audios_dir.iterdir()):
+            print(f"ERROR: no audio files in {audios_dir}")
+            print(f"Place raw audio there (or pass --skip_segment if dataset/{dataset_name}/filtered is ready).")
+            sys.exit(1)
+        os.makedirs(dataset_dir / "segmented", exist_ok=True)
+        os.makedirs(dataset_dir / "filtered", exist_ok=True)
+        sub_env = {**os.environ, "DATASET_DIR": str(dataset_dir)}
+        run(f'"{py}" 1_before-training/frag.py', env=sub_env)
+        run(f'"{py}" 1_before-training/rem_noise.py', env=sub_env)
 
     # ------------------------------------------------------------------ #
     # 3. Mangio: preprocess                                               #

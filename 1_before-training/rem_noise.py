@@ -3,8 +3,11 @@ import shutil
 import librosa
 import numpy as np
 
-input_dir = "dataset/segmented" # directory with the segmented audio files from frag.py
-output_dir = "dataset/filtered" # directory to save the filtered audio files with good SNR
+# DATASET_DIR is set by scripts/run_pipeline.py per-dataset.
+# Standalone use: set DATASET_DIR=dataset/<name> or rely on the legacy fallback.
+DATASET_DIR = os.environ.get("DATASET_DIR", "dataset")
+input_dir = os.path.join(DATASET_DIR, "segmented")  # segmented audio files from frag.py
+output_dir = os.path.join(DATASET_DIR, "filtered")  # filtered audio files with good SNR
 
 os.makedirs(output_dir, exist_ok=True)
 

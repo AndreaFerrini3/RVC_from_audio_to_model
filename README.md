@@ -14,15 +14,29 @@ cd RVC_from_audio_to_model
 # 2. One-time setup: dependencies + pretrained models + patch Mangio
 python scripts/setup.py
 
-# 3. Place raw audio files in dataset/audios/  (WAV, FLAC, MP3, OGG, M4A, AAC)
+# 3. Create the dataset folder and drop raw audio inside dataset/<dataset_name>/audios/
+#    (WAV, FLAC, MP3, OGG, M4A, AAC). Example:
+#       mkdir -p dataset/my_voice/audios
+#       cp /path/to/*.wav dataset/my_voice/audios/
+#    Subfolders segmented/ and filtered/ are created by the pipeline.
 
-# 4. Run the full pipeline
-python scripts/run_pipeline.py --model_name my_voice --sr 40k --epochs 200 --gpus 0
+# 4. Run the full pipeline (reads dataset/my_voice/audios/, writes mangio/logs/my_voice/)
+python scripts/run_pipeline.py --model_name my_voice --dataset my_voice --sr 40k --epochs 200 --gpus 0
 
 # — or use the shell wrapper (same defaults, less typing) —
 ./run_pipeline.sh my_voice          # Linux / Mac / WSL
 run_pipeline.bat my_voice           # Windows CMD
+
+# 5. Train another speaker without overwriting the first
+mkdir -p dataset/another_voice/audios   # add audio
+./run_pipeline.sh another_voice         # new model, new dataset folder
 ```
+
+By default `--dataset` mirrors `--model_name`, so audio for `my_voice` lives in
+`dataset/my_voice/audios/`. To reuse one dataset folder across models, pass
+`--dataset <folder_name>` explicitly. Each dataset is self-contained, so the
+pipeline can be run any number of times for different speakers without
+overwriting prior `segmented/` or `filtered/` outputs.
 
 The pipeline runs automatically:
 1. Segment audio into ~10 s clips (`frag.py`)
@@ -34,8 +48,10 @@ The pipeline runs automatically:
 ```
 RVC_from_audio_to_model/
 ├── dataset/
-│   ├── segmented/              ← frag.py output: ~10 s WAV clips
-│   └── filtered/               ← rem_noise.py output: clips with SNR ≥ 25 dB
+│   └── <dataset_name>/         ← one folder per speaker / experiment
+│       ├── audios/             ← raw source audio (place files here)
+│       ├── segmented/          ← frag.py output: ~10 s WAV clips
+│       └── filtered/           ← rem_noise.py output: clips with SNR ≥ 25 dB
 ├── mangio/
 │   ├── csvdb/
 │   │   ├── formanting.csv      ← auto-created (formant shift disabled by default)
@@ -80,9 +96,10 @@ RVC_from_audio_to_model/
 │   ├── patch_mangio.py            # Injects GAN monitoring into Mangio train script
 │   └── run_pipeline.py            # End-to-end pipeline orchestrator
 ├── dataset/
-│   ├── audios/                    # Raw source audio — place files here
-│   ├── segmented/                 # Output of frag.py (~10 s clips)
-│   └── filtered/                  # Output of rem_noise.py (SNR ≥ 25 dB)
+│   └── <dataset_name>/            # One folder per speaker / experiment
+│       ├── audios/                # Raw source audio — place files here
+│       ├── segmented/             # Output of frag.py (~10 s clips)
+│       └── filtered/              # Output of rem_noise.py (SNR ≥ 25 dB)
 ├── 1_before-training/
 │   ├── frag.py                    # Audio segmentation
 │   └── rem_noise.py               # SNR filtering
@@ -146,6 +163,10 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 | `F0METHOD` | `rmvpe` | `--f0method` |
 | `N_PROCESSES` | `4` | `--n_processes` |
 
+> Use `--dataset <folder>` on the command line to point at a dataset folder
+> whose name differs from `--model_name`. Example:
+> `./run_pipeline.sh my_voice_v2 --dataset my_voice`
+
 > **Linux/Mac**: run `chmod +x run_pipeline.sh` once before first use.
 
 ---
@@ -154,6 +175,7 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 
 ```
 --model_name        Model / experiment name (required)
+--dataset           Dataset folder under dataset/ (default: same as --model_name)
 --sr                Sample rate: 32k | 40k | 48k  (default: 40k)
 --f0                Pitch guidance: 1=yes 0=no     (default: 1)
 --version           RVC version: v1 | v2           (default: v2)
@@ -167,7 +189,7 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 --cache_gpu         Cache dataset in GPU VRAM
 --save_latest       Keep only the latest checkpoint
 --save_every_weights  Export .pth weights every save_epoch
---skip_segment      Skip frag.py + rem_noise.py (dataset/filtered/ already ready)
+--skip_segment      Skip frag.py + rem_noise.py (dataset/<name>/filtered/ already ready)
 --skip_analysis     Skip post-training HTML reports
 ```
 
