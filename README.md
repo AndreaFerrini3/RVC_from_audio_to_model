@@ -70,7 +70,9 @@ RVC_from_audio_to_model/
 │           ├── feature_map_summary.csv GAN discriminator feature stats per epoch
 │           ├── G_<step>.pth            generator checkpoints (every save_epoch)
 │           ├── D_<step>.pth            discriminator checkpoints (every save_epoch)
-│           └── <model_name>.pth        final exported voice model ← use this for inference
+│           └── added_IVF*_*.index      faiss index (built on demand by run_inference.py)
+│   └── weights/
+│       └── <model_name>.pth            final exported voice model ← use this for inference
 └── 3_after-training/
     └── <model_name>/
         ├── feature_report.html         interactive GAN stability report (Plotly)
@@ -90,18 +92,25 @@ RVC_from_audio_to_model/
 
 ```
 RVC_from_audio_to_model/
-├── run_pipeline.sh                # Shell wrapper — Linux / Mac / WSL
-├── run_pipeline.bat               # Shell wrapper — Windows CMD
+├── run_pipeline.sh                # Training wrapper — Linux / Mac / WSL
+├── run_pipeline.bat               # Training wrapper — Windows CMD
+├── run_inference.sh               # Inference wrapper — Linux / Mac / WSL
+├── run_inference.bat              # Inference wrapper — Windows CMD
 ├── mangio/                        # Mangio-RVC-Fork (git submodule, MIT)
 ├── scripts/
 │   ├── setup.py                   # One-time setup (deps + models + patch)
 │   ├── patch_mangio.py            # Injects GAN monitoring into Mangio train script
-│   └── run_pipeline.py            # End-to-end pipeline orchestrator
+│   ├── run_pipeline.py            # End-to-end training pipeline orchestrator
+│   └── run_inference.py           # End-to-end inference pipeline orchestrator
 ├── dataset/
 │   └── <dataset_name>/            # One folder per speaker / experiment
 │       ├── audios/                # Raw source audio — place files here
 │       ├── segmented/             # Output of frag.py (~10 s clips)
 │       └── filtered/              # Output of rem_noise.py (SNR ≥ 25 dB)
+├── inference_dataset/
+│   └── <inference_dataset>/       # Drop WAVs to convert here (e.g. inf_dataset_1/)
+├── inference_results/
+│   └── <model_name>_<inference_dataset>/   # Converted WAVs land here
 ├── 1_before-training/
 │   ├── frag.py                    # Audio segmentation
 │   └── rem_noise.py               # SNR filtering
@@ -209,6 +218,92 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 > **Note on PyTorch**: `setup.py` installs `torch==2.0.0` from Mangio's `requirements.txt`.
 > If you need a specific CUDA version, install PyTorch manually first, then run:
 > `python scripts/setup.py --skip_deps`
+
+---
+
+## Inference (audio → converted audio)
+
+After training a model you can convert any WAV through it.
+
+### Where to put the audio
+
+Drop the WAV(s) to convert into a subfolder of `inference_dataset/`:
+
+```
+inference_dataset/
+└── inf_dataset_1/         ← default subfolder name
+    ├── clip1.wav
+    └── clip2.wav
+```
+
+Create as many sibling folders as you like (`inf_dataset_2/`, `my_test/`, …) and
+pass the folder name to the wrapper.
+
+```bash
+# Linux / Mac / WSL — reads inference_dataset/inf_dataset_1/ by default
+./run_inference.sh my_voice
+
+# Pick a different subfolder
+./run_inference.sh my_voice inf_dataset_2 --transpose 2
+
+# Windows CMD
+run_inference.bat my_voice inf_dataset_1
+
+# Python script directly
+python scripts/run_inference.py --model_name my_voice --inference_dataset inf_dataset_1
+
+# Override the convention with an explicit path (single file or folder)
+python scripts/run_inference.py --model_name my_voice --input C:\path\to\clip.wav
+```
+
+Output goes to `inference_results/<model_name>_<inference_dataset>/` by default
+(keeps inputs and results in separate top-level folders, one result folder per
+model/dataset pair so nothing gets clobbered). Override with `--output_dir`.
+
+### What it resolves automatically
+
+| Asset | Location |
+|---|---|
+| Model weights | `mangio/weights/<model_name>.pth` |
+| Faiss index | `mangio/logs/<model_name>/added_IVF*_<model_name>_<version>.index` |
+| RVC version | Read from the `.pth` checkpoint |
+
+If the faiss index is missing pass `--build_index` to construct it from the
+extracted features in `mangio/logs/<model_name>/3_feature{256|768}/`. Without an
+index (and without `--build_index`) inference still runs with `index_rate=0`.
+
+### run_inference.py — Options
+
+```
+--model_name        Trained model name (required; looks up mangio/weights/<name>.pth)
+--inference_dataset Subfolder under inference_dataset/ (default: inf_dataset_1)
+--input             Override: explicit WAV file or folder (default: inference_dataset/<inference_dataset>/)
+--output_dir        Override output folder (default: inference_results/<model_name>_<inference_dataset>/)
+--transpose, -k   Pitch shift in semitones (default: 0)
+--f0method        Pitch method: rmvpe | harvest | crepe | pm | mangio-crepe (default: rmvpe)
+--index_rate      Index influence 0..1 (default: 0.66)
+--filter_radius   Median filter radius for harvest f0 (default: 3)
+--resample_sr     Resample output sr; 0 = keep model sr (default: 0)
+--rms_mix_rate    Volume envelope mix 0..1 (default: 1.0)
+--protect         Protect voiceless consonants 0..0.5 (default: 0.33)
+--device          cuda:0 | cpu (default: cuda:0)
+--is_half         fp16 inference: true | false (default: true)
+--index_path      Explicit .index file (skips auto-discovery)
+--build_index     Build index from features if missing
+--no_index        Skip index entirely (forces index_rate=0)
+```
+
+### Shell wrapper env vars
+
+| Var | Default | Equivalent flag |
+|---|---|---|
+| `MODEL_NAME` | `my_voice` | first positional arg |
+| `INFERENCE_DATASET` | `inf_dataset_1` | second positional arg |
+| `TRANSPOSE` | `0` | `--transpose` |
+| `F0METHOD` | `rmvpe` | `--f0method` |
+| `INDEX_RATE` | `0.66` | `--index_rate` |
+| `DEVICE` | `cuda:0` | `--device` |
+| `IS_HALF` | `true` | `--is_half` |
 
 ---
 

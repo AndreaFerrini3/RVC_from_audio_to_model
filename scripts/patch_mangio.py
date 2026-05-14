@@ -1,12 +1,16 @@
 """
-Patches mangio/train_nsf_sim_cache_sid_load_pretrain.py to inject
-feature map monitoring. Run once after: git submodule update --init
+Patches Mangio scripts:
+  - train_nsf_sim_cache_sid_load_pretrain.py : inject feature map monitoring
+  - infer_batch_rvc.py                       : fix load_audio() signature mismatch
+
+Run once after: git submodule update --init
 """
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 TRAIN_SCRIPT = REPO_ROOT / "mangio" / "train_nsf_sim_cache_sid_load_pretrain.py"
+INFER_SCRIPT = REPO_ROOT / "mangio" / "infer_batch_rvc.py"
 
 ALREADY_PATCHED_MARKER = "_summarize_feature_maps"
 
@@ -85,7 +89,7 @@ CALL_BLOCK = (
 )
 
 
-def main():
+def patch_train():
     if not TRAIN_SCRIPT.exists():
         print(f"ERROR: {TRAIN_SCRIPT} not found.")
         print("Run: git submodule update --init")
@@ -94,7 +98,7 @@ def main():
     text = TRAIN_SCRIPT.read_text(encoding="utf-8")
 
     if ALREADY_PATCHED_MARKER in text:
-        print("Already patched — nothing to do.")
+        print(f"[train] already patched — skipping")
         return
 
     if FUNCTIONS_MARKER not in text:
@@ -109,7 +113,57 @@ def main():
     text = text.replace(CALL_MARKER, CALL_MARKER + CALL_BLOCK, 1)
 
     TRAIN_SCRIPT.write_text(text, encoding="utf-8")
-    print(f"Patched: {TRAIN_SCRIPT}")
+    print(f"[train] patched: {TRAIN_SCRIPT}")
+
+
+INFER_PATCHES = [
+    # (description, old, new)
+    (
+        "load_audio signature",
+        "audio = load_audio(input_audio, 16000)",
+        'audio = load_audio(input_audio, 16000, "false", 1.0, 1.0)',
+    ),
+    (
+        "crepe_hop_length CLI arg",
+        "protect = float(sys.argv[13])\nprint(sys.argv)",
+        "protect = float(sys.argv[13])\n"
+        "crepe_hop_length = int(sys.argv[14]) if len(sys.argv) > 14 else 160\n"
+        "print(sys.argv)",
+    ),
+    (
+        "crepe_hop_length pipeline arg",
+        "        version,\n        protect,\n        f0_file=f0_file,\n    )",
+        "        version,\n        protect,\n        crepe_hop_length,\n        f0_file=f0_file,\n    )",
+    ),
+]
+
+
+def patch_infer():
+    if not INFER_SCRIPT.exists():
+        print(f"[infer] {INFER_SCRIPT} not found — skipping")
+        return
+
+    text = INFER_SCRIPT.read_text(encoding="utf-8")
+    changed = False
+    for label, old, new in INFER_PATCHES:
+        if new in text:
+            print(f"[infer] {label} already patched — skipping")
+            continue
+        if old not in text:
+            print(f"[infer] WARNING: marker for '{label}' not found — Mangio version may have changed")
+            continue
+        text = text.replace(old, new, 1)
+        changed = True
+        print(f"[infer] applied: {label}")
+
+    if changed:
+        INFER_SCRIPT.write_text(text, encoding="utf-8")
+        print(f"[infer] wrote: {INFER_SCRIPT}")
+
+
+def main():
+    patch_train()
+    patch_infer()
 
 
 if __name__ == "__main__":
