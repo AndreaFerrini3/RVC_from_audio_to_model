@@ -88,6 +88,36 @@ RVC_from_audio_to_model/
 
 ---
 
+## Re-training the same speaker
+
+When you re-run the pipeline for a speaker whose `dataset/<name>/filtered/` is
+already populated (e.g. to tune `--epochs`, `--batch_size`, or swap the
+pretrained model), skip the dataset-prep stage:
+
+```bash
+# Skip frag.py + rem_noise.py (steps 1-2). Mangio preprocess, f0 and feature
+# extraction still re-run and overwrite mangio/logs/<model_name>/{0_gt_wavs,
+# 2a_f0, 2b-f0nsf, 3_feature768}.
+./run_pipeline.sh my_voice --skip_segment --epochs 300
+
+# Also skip post-training HTML reports
+./run_pipeline.sh my_voice --skip_segment --skip_analysis
+```
+
+| Stage | Skip flag | When safe to skip |
+|---|---|---|
+| `frag.py` + `rem_noise.py` | `--skip_segment` | `dataset/<name>/filtered/` already populated |
+| Loss + feature-map HTML reports | `--skip_analysis` | You don't need fresh reports for this run |
+
+> Mangio preprocess / f0 / feature extraction (steps 3-5) have no skip flag —
+> they always re-run and overwrite the contents of
+> `mangio/logs/<model_name>/{0_gt_wavs, 1_16k_wavs, 2a_f0, 2b-f0nsf, 3_feature768}/`.
+> If you want to keep the existing features, back up that folder first or train
+> under a different `--model_name` (passing `--dataset <shared_folder>` to share
+> the filtered audio).
+
+---
+
 ## Repository Structure
 
 ```
