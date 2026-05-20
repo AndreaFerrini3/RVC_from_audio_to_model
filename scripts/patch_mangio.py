@@ -2,9 +2,14 @@
 Patches Mangio scripts:
   - train_nsf_sim_cache_sid_load_pretrain.py : inject feature map monitoring
   - infer_batch_rvc.py                       : fix load_audio() signature mismatch
+  - fairseq/checkpoint_utils.py              : force weights_only=False
+                                                (torch 2.6+ defaults to True and
+                                                 refuses fairseq Dictionary in
+                                                 hubert_base.pt)
 
 Run once after: git submodule update --init
 """
+import importlib.util
 import sys
 from pathlib import Path
 
@@ -161,9 +166,47 @@ def patch_infer():
         print(f"[infer] wrote: {INFER_SCRIPT}")
 
 
+FAIRSEQ_OLD = 'state = torch.load(f, map_location=torch.device("cpu"))'
+FAIRSEQ_NEW = 'state = torch.load(f, map_location=torch.device("cpu"), weights_only=False)'
+
+
+def patch_fairseq():
+    """Force weights_only=False in fairseq.checkpoint_utils.load_checkpoint_to_cpu.
+
+    torch 2.6+ flipped torch.load's default to weights_only=True for safety.
+    hubert_base.pt contains a fairseq.data.dictionary.Dictionary object that is
+    not on the safe-globals whitelist, so the load is rejected. The .pt comes
+    from the official HuggingFace repo (lj1995/VoiceConversionWebUI), so we
+    trust it and override the default.
+    """
+    spec = importlib.util.find_spec("fairseq")
+    if spec is None or spec.origin is None:
+        print("[fairseq] not installed — skipping (run setup.py first)")
+        return
+    cu_path = Path(spec.origin).parent / "checkpoint_utils.py"
+    if not cu_path.exists():
+        print(f"[fairseq] {cu_path} not found — skipping")
+        return
+
+    text = cu_path.read_text(encoding="utf-8")
+    if FAIRSEQ_NEW in text:
+        print(f"[fairseq] already patched — skipping")
+        return
+    if FAIRSEQ_OLD not in text:
+        print(f"[fairseq] WARNING: marker not found in {cu_path}")
+        print(f"[fairseq] expected: {FAIRSEQ_OLD}")
+        print(f"[fairseq] fairseq version may differ — patch manually if torch.load fails")
+        return
+
+    text = text.replace(FAIRSEQ_OLD, FAIRSEQ_NEW, 1)
+    cu_path.write_text(text, encoding="utf-8")
+    print(f"[fairseq] patched: {cu_path}")
+
+
 def main():
     patch_train()
     patch_infer()
+    patch_fairseq()
 
 
 if __name__ == "__main__":

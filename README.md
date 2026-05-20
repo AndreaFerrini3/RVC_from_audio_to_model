@@ -4,15 +4,37 @@
 
 ---
 
+## Prerequisites
+
+- **Python 3.10** (NOT 3.12 — Python 3.12 removed the `imp` module that `audioread`, a librosa dep, still imports).
+  On Debian/Ubuntu:
+  ```bash
+  sudo add-apt-repository ppa:deadsnakes/ppa
+  sudo apt install python3.10 python3.10-venv
+  ```
+- **Always use a venv.** Debian 12+ and recent Ubuntu enforce PEP 668 (`externally-managed-environment`),
+  which blocks `pip install` against the system Python. The venv also keeps the
+  pinned `pip<24.1` / `setuptools<81` from polluting the system install.
+  ```bash
+  python3.10 -m venv .venv
+  source .venv/bin/activate    # Windows: .venv\Scripts\activate
+  ```
+- **NVIDIA Blackwell (RTX 50xx)**: pass `--torch_cu128` to `setup.py` — see Quick Start step 2.
+
+---
+
 ## Quick Start
 
 ```bash
-# 1. Clone (includes Mangio-RVC-Fork as submodule)
+# 1. Clone (includes Mangio-RVC-Fork as submodule) and enter a Python 3.10 venv
 git clone --recurse-submodules <repo_url>
 cd RVC_from_audio_to_model
+python3.10 -m venv .venv && source .venv/bin/activate
 
-# 2. One-time setup: dependencies + pretrained models + patch Mangio
+# 2. One-time setup: pins build tools, installs deps, downloads models, patches Mangio + fairseq
 python scripts/setup.py
+#   For RTX 50xx (Blackwell, sm_120) reinstall torch on CUDA 12.8 wheels:
+# python scripts/setup.py --torch_cu128
 
 # 3. Create the dataset folder and drop raw audio inside dataset/<dataset_name>/audios/
 #    (WAV, FLAC, MP3, OGG, M4A, AAC). Example:
@@ -240,14 +262,27 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 
 ```
 --version           Pretrained model version to download: v1 | v2  (default: v2)
+--torch_cu128       Reinstall torch 2.7 + CUDA 12.8 wheels (required for RTX 50xx / sm_120)
 --skip_deps         Skip pip install (already done)
 --skip_models       Skip pretrained model download (already done)
 --skip_patch        Skip patch_mangio.py
 ```
 
-> **Note on PyTorch**: `setup.py` installs `torch==2.0.0` from Mangio's `requirements.txt`.
-> If you need a specific CUDA version, install PyTorch manually first, then run:
-> `python scripts/setup.py --skip_deps`
+### What setup.py patches outside the repo
+
+Three things sit outside `git` control and are re-applied on every fresh venv:
+
+| What | Why | Where it's handled |
+|---|---|---|
+| `pip<24.1` pin | pip 24.1+ rejects `omegaconf==2.0.6` (malformed metadata) | `setup.py` step 1 |
+| `setuptools<81` pin | setuptools 81 removed `pkg_resources`; `librosa 0.9.1` still imports it | `setup.py` step 1 |
+| `PySimpleGUI` line removed from `mangio/requirements.txt` | Pulled from PyPI when the author went commercial. Only used by `mangio/gui_*.py`, not by the training/inference pipeline | `setup.py` step 2 (filters at install time — submodule file untouched) |
+| `fairseq/checkpoint_utils.py` → `weights_only=False` | torch 2.6+ flipped `torch.load` default to `True`; refuses the `Dictionary` object in `hubert_base.pt` | `patch_mangio.py` → `patch_fairseq()` (called by `setup.py` step 5) |
+
+> **PyTorch**: by default `setup.py` installs `torch==2.0.0` (CUDA 11.7 wheel) from Mangio's requirements.
+> Pass `--torch_cu128` to reinstall on CUDA 12.8 wheels — required for RTX 50xx (Blackwell, sm_120), since
+> `torch==2.0.0` only ships kernels up to sm_86 and crashes with `no kernel image is available for execution
+> on the device`. For a custom CUDA version: install PyTorch manually, then run `python scripts/setup.py --skip_deps`.
 
 ---
 
