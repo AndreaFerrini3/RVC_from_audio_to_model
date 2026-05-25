@@ -211,7 +211,7 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 |---|---|
 | `--flag` on command line | `--epochs 300` |
 | Env var | `EPOCHS=500 ./run_pipeline.sh` |
-| Default in script | `EPOCHS=200` |
+| Default in script | `EPOCHS=50` |
 
 **Env vars recognised by the wrappers:**
 
@@ -219,7 +219,7 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 |---|---|---|
 | `MODEL_NAME` | `my_voice` | first positional arg |
 | `SR` | `40k` | `--sr` |
-| `EPOCHS` | `200` | `--epochs` |
+| `EPOCHS` | `50` | `--epochs` |
 | `SAVE_EPOCH` | `10` | `--save_epoch` |
 | `BATCH_SIZE` | `8` | `--batch_size` |
 | `GPUS` | `0` | `--gpus` |
@@ -242,7 +242,7 @@ set GPUS=0-1 && run_pipeline.bat my_voice
 --sr                Sample rate: 32k | 40k | 48k  (default: 40k)
 --f0                Pitch guidance: 1=yes 0=no     (default: 1)
 --version           RVC version: v1 | v2           (default: v2)
---epochs            Total training epochs           (default: 200)
+--epochs            Total training epochs           (default: 50)
 --save_epoch        Save checkpoint every N epochs  (default: 10)
 --batch_size        Batch size                      (default: 8)
 --gpus              GPU indices, dash-separated     (default: 0)

@@ -13,7 +13,7 @@ setlocal enabledelayedexpansion
 rem --- Defaults (override with env vars) ---
 if "%MODEL_NAME%"=="" set MODEL_NAME=my_voice
 if "%SR%"==""         set SR=40k
-if "%EPOCHS%"==""     set EPOCHS=200
+if "%EPOCHS%"==""     set EPOCHS=50
 if "%SAVE_EPOCH%"=="" set SAVE_EPOCH=10
 if "%BATCH_SIZE%"=="" set BATCH_SIZE=8
 if "%GPUS%"==""       set GPUS=0

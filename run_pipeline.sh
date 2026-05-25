@@ -13,7 +13,7 @@ set -euo pipefail
 
 MODEL_NAME="${1:-${MODEL_NAME:-my_voice}}"
 SR="${SR:-40k}"
-EPOCHS="${EPOCHS:-200}"
+EPOCHS="${EPOCHS:-50}"
 SAVE_EPOCH="${SAVE_EPOCH:-10}"
 BATCH_SIZE="${BATCH_SIZE:-8}"
 GPUS="${GPUS:-0}"

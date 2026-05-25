@@ -111,7 +111,7 @@ def build_parser():
                    help="RVC model version (default: v2)")
 
     # Training
-    p.add_argument("--epochs", default=200, type=int, help="Total training epochs (default: 200)")
+    p.add_argument("--epochs", default=50, type=int, help="Total training epochs (default: 50)")
     p.add_argument("--save_epoch", default=10, type=int, help="Save checkpoint every N epochs")
     p.add_argument("--batch_size", default=8, type=int, help="Batch size (default: 8)")
     p.add_argument("--gpus", default="0",

@@ -93,6 +93,17 @@ CALL_BLOCK = (
     "                    )\n"
 )
 
+# --- lambda_fm exponential decay on feature-matching loss ---
+# Decays the FM-loss weight from ~1.3 to a 0.5 floor over training so the
+# generator gets less pull from the discriminator's intermediate activations
+# as it matures. `math` is already imported in the original Mangio script.
+LAMBDA_FM_MARKER = "                loss_fm = feature_loss(fmap_r, fmap_g)\n"
+LAMBDA_FM_BLOCK = (
+    "                lambda_fm = max(0.5, 1.3 * math.exp(-epoch / 100))\n"
+    "                loss_fm = feature_loss(fmap_r, fmap_g) * lambda_fm\n"
+)
+LAMBDA_FM_PATCHED_MARKER = "loss_fm = feature_loss(fmap_r, fmap_g) * lambda_fm"
+
 
 def patch_train():
     if not TRAIN_SCRIPT.exists():
@@ -101,24 +112,33 @@ def patch_train():
         sys.exit(1)
 
     text = TRAIN_SCRIPT.read_text(encoding="utf-8")
+    original = text
 
     if ALREADY_PATCHED_MARKER in text:
-        print(f"[train] already patched — skipping")
-        return
+        print("[train] feature-map monitoring already patched — skipping")
+    else:
+        if FUNCTIONS_MARKER not in text:
+            print("ERROR: marker 'global_step = 0' not found. Mangio version may have changed.")
+            sys.exit(1)
+        if CALL_MARKER not in text:
+            print("ERROR: Train Epoch logger.info marker not found. Mangio version may have changed.")
+            sys.exit(1)
+        text = text.replace(FUNCTIONS_MARKER, FUNCTIONS_MARKER + FUNCTIONS_BLOCK, 1)
+        text = text.replace(CALL_MARKER, CALL_MARKER + CALL_BLOCK, 1)
+        print("[train] feature-map monitoring injected")
 
-    if FUNCTIONS_MARKER not in text:
-        print("ERROR: marker 'global_step = 0' not found. Mangio version may have changed.")
+    if LAMBDA_FM_PATCHED_MARKER in text:
+        print("[train] lambda_fm already patched — skipping")
+    elif LAMBDA_FM_MARKER not in text:
+        print("ERROR: 'loss_fm = feature_loss(...)' marker not found. Mangio version may have changed.")
         sys.exit(1)
+    else:
+        text = text.replace(LAMBDA_FM_MARKER, LAMBDA_FM_BLOCK, 1)
+        print("[train] lambda_fm injected")
 
-    if CALL_MARKER not in text:
-        print("ERROR: Train Epoch logger.info marker not found. Mangio version may have changed.")
-        sys.exit(1)
-
-    text = text.replace(FUNCTIONS_MARKER, FUNCTIONS_MARKER + FUNCTIONS_BLOCK, 1)
-    text = text.replace(CALL_MARKER, CALL_MARKER + CALL_BLOCK, 1)
-
-    TRAIN_SCRIPT.write_text(text, encoding="utf-8")
-    print(f"[train] patched: {TRAIN_SCRIPT}")
+    if text != original:
+        TRAIN_SCRIPT.write_text(text, encoding="utf-8")
+        print(f"[train] wrote: {TRAIN_SCRIPT}")
 
 
 INFER_PATCHES = [
